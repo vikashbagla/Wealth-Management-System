@@ -6,6 +6,12 @@
 // re-renders. REST polling (wmsStandardRefresh) stays as the automatic fallback
 // when the channel is quiet or down — this only makes the cache fresher, faster.
 //
+// DEFAULT OFF (egress, 2026-09-07): the Realtime price relay is disabled by default —
+// scalp/app prices come from the app-wide 10s REST poll (wmsStandardRefresh), the same
+// shared wmsLivePrices cache. This removes the ~1/sec Supabase Realtime egress. The
+// engine is UNAFFECTED (it runs off its own Droplet Fyers WS, not this browser feed).
+// Re-enable the ~1s feed instantly, no deploy:  localStorage.wms_prices_ws = 'on'
+//
 // LEADER-ONLY (egress dedup, 2026-09-03): every subscribed tab receives the
 // Droplet's ~1/sec broadcast, so N open tabs = N× Realtime egress. Only the
 // tab-sync LEADER now holds the subscription; followers stay unsubscribed and
@@ -15,6 +21,11 @@
 (function () {
   var CHANNEL = 'wms-prices';
   var _renderTimer = null, _ch = null, _subscribed = false, _t0 = Date.now();
+
+  // Default OFF: only subscribe when explicitly re-enabled. Any storage error -> stay off.
+  function wsEnabled() {
+    try { return localStorage.getItem('wms_prices_ws') === 'on'; } catch (e) { return false; }
+  }
 
   function scheduleRender() {
     if (_renderTimer) return;
@@ -70,6 +81,7 @@
   // follower promotes) is followed within a couple of seconds.
   function reconcile() {
     if (!window.supabaseClient) return;
+    if (!wsEnabled()) { unsubscribe(); return; }   // default: use the 10s REST poll, no Realtime egress
     var ready = !!window._wmsTabSyncReady;
     var isLeader = !!window.wmsTabIsLeader;
     if (ready && !isLeader) { unsubscribe(); return; }           // confirmed follower -> drop it
