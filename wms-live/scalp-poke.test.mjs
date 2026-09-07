@@ -4,15 +4,17 @@ let pass=0, fail=0;
 const T=(n,f)=>{ try{ f(); console.log('PASS  '+n); pass++; }catch(e){ console.error('FAIL  '+n+'\n      '+e.message); fail++; } };
 const eq=(a,b,m)=>{ if(a!==b) throw new Error((m||'')+' expected '+JSON.stringify(b)+' got '+JSON.stringify(a)); };
 const CD=3000, HRS=true;
-const longSt=(o={})=>({ levelAware:true, direction:'long', bandLo:300, bandHi:360, trigger:340, firstEntry:false, lastCrossTrigger:null, lastFirstPokeMs:0, threshold:1, lastPokePrice:null, ...o });
+const longSt=(o={})=>({ levelAware:true, direction:'long', bandLo:300, bandHi:360, trigger:340, firstEntry:false, lastCrossKey:null, lastFirstPokeMs:0, threshold:1, lastPokePrice:null, ...o });
 const shortSt=(o={})=>longSt({ direction:'short', bandLo:22000, bandHi:25000, trigger:24000, ...o });
 
 T('out-of-hours never pokes', ()=>{ eq(decidePoke(longSt(), 340, 1e6, CD, false).poke, false); });
 
 T('long: price ABOVE trigger does not poke', ()=>{ eq(decidePoke(longSt({trigger:340}), 342, 1e6, CD, HRS).poke, false); });
-T('long: price crosses DOWN to trigger -> poke (level-cross)', ()=>{ const d=decidePoke(longSt({trigger:340}), 340, 1e6, CD, HRS); eq(d.poke,true); eq(d.why,'level-cross'); eq(d.set.lastCrossTrigger,340); });
-T('long: de-dupe — same trigger already poked -> no poke', ()=>{ eq(decidePoke(longSt({trigger:340,lastCrossTrigger:340}), 339, 1e6, CD, HRS).poke, false); });
-T('long: trigger moved (new level) -> pokes again on cross', ()=>{ const d=decidePoke(longSt({trigger:338,lastCrossTrigger:340}), 338, 1e6, CD, HRS); eq(d.poke,true); eq(d.set.lastCrossTrigger,338); });
+T('long: price crosses DOWN to trigger -> poke (level-cross)', ()=>{ const d=decidePoke(longSt({trigger:340}), 340, 1e6, CD, HRS); eq(d.poke,true); eq(d.why,'level-cross'); eq(d.set.lastCrossKey,'340@'); });
+T('long: de-dupe — same trigger+epoch already poked -> no poke', ()=>{ eq(decidePoke(longSt({trigger:340,lastCrossKey:'340@'}), 339, 1e6, CD, HRS).poke, false); });
+T('long: trigger moved (new level) -> pokes again on cross', ()=>{ const d=decidePoke(longSt({trigger:338,lastCrossKey:'340@'}), 338, 1e6, CD, HRS); eq(d.poke,true); eq(d.set.lastCrossKey,'338@'); });
+T('ARM EPOCH advances (cap raised) -> re-pokes the SAME level', ()=>{ const d=decidePoke(longSt({trigger:340,lastCrossKey:'340@100',armEpoch:200}), 339, 1e6, CD, HRS); eq(d.poke,true); eq(d.why,'level-cross'); eq(d.set.lastCrossKey,'340@200'); });
+T('ARM EPOCH unchanged -> stays de-duped (no poke-spam)', ()=>{ eq(decidePoke(longSt({trigger:340,lastCrossKey:'340@100',armEpoch:100}), 339, 1e6, CD, HRS).poke, false); });
 
 T('short: price crosses UP to trigger -> poke', ()=>{ const d=decidePoke(shortSt({trigger:24000}), 24000, 1e6, CD, HRS); eq(d.poke,true); eq(d.why,'level-cross'); });
 T('short: price below trigger -> no poke', ()=>{ eq(decidePoke(shortSt({trigger:24000}), 23950, 1e6, CD, HRS).poke, false); });

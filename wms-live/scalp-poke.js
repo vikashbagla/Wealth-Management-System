@@ -30,10 +30,14 @@ export function decidePoke(st, price, now, cooldownMs, inHours) {
       return { poke: true, why: 'first-entry', set: { lastFirstPokeMs: now } };
     return { poke: false, why: 'first-entry-cooldown' };
   }
-  // ENTRY LEVEL-CROSS: poke once per armed level when price crosses from the actionable side.
+  // ENTRY LEVEL-CROSS: poke once per (armed level, ARM EPOCH). The DB bumps armed_at
+  // (mig 118) on a re-arm OR a lot_cap/band edit, which advances st.armEpoch and releases
+  // this de-dupe -> a level that was declined earlier (e.g. the cap was full) re-pokes on the
+  // next cross once the cap is raised. Without the epoch the once-per-level flag stuck forever.
   if (st.trigger == null) return { poke: false, why: 'no-trigger' };
+  const crossKey = st.trigger + '@' + (st.armEpoch == null ? '' : st.armEpoch);
   const crossed = st.direction === 'short' ? price >= st.trigger : price <= st.trigger;
-  if (crossed && st.lastCrossTrigger !== st.trigger)
-    return { poke: true, why: 'level-cross', set: { lastCrossTrigger: st.trigger } };
+  if (crossed && st.lastCrossKey !== crossKey)
+    return { poke: true, why: 'level-cross', set: { lastCrossKey: crossKey } };
   return { poke: false, why: crossed ? 'already-poked-this-level' : 'not-crossed' };
 }
